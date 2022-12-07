@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  dev:
+    build: .
+    volumes:
+    - ./static/datastore.db:/tmp/datastore.db
+  api:
+    build: .
+    environment:
+      NDC_RESTAPI_DATASTORE_URL: "https://ioggstream.github.io/json-semantic-playground/datastore.db"

@@ -1,0 +1,476 @@
+#
+# Questo e' un progetto d'esempio in formato OpenAPI 3.0 API Starter Kit.
+#
+# Stai per sviluppare un API? Segui attentamente questo template e
+#   potrai integrarla facilmente in Developers Italia.
+#
+# Se usi componenti in modo ricorrente, yaml
+#   permette di definirle e riusarle.
+#   Puoi metterle nell'oggetto x-commons e rimuoverlo
+#   prima di pubblicarle.
+x-commons:
+  ratelimit-headers: &ratelimit-headers
+    X-RateLimit-Limit:
+      $ref: '#/components/headers/X-RateLimit-Limit'
+    X-RateLimit-Remaining:
+      $ref: '#/components/headers/X-RateLimit-Remaining'
+    X-RateLimit-Reset:
+      $ref: '#/components/headers/X-RateLimit-Reset'
+  common-responses: &common-responses
+    '400':
+      $ref: '#/components/responses/400BadRequest'
+    '429':
+      $ref: '#/components/responses/429TooManyRequests'
+    '503':
+      $ref: '#/components/responses/503ServiceUnavailable'
+    default:
+      $ref: '#/components/responses/default'
+  caching-fields: &caching-fields
+    Cache-Control:
+      description: |-
+        Since responses are public, they should be cached
+        for at least 10 hours (eg. for max-age=36000, public).
+      schema:
+        type: string
+        format: string
+        pattern: >-
+          [a-zA-Z0-9\-_= ]{1,128}
+        default: public, max-age=36000
+        maxLength: 128
+        minLength: 6
+
+openapi: 3.0.2
+info:
+  version: "0.0.1"
+  title: |-
+    Controlled Vocabularies.
+  x-summary: >-
+    Access controlled vocabularies via a REST interface.
+  description: |
+    #### Documentation
+    This API exposes via a REST interface, dataset contained in RDF controlled vocabularies
+    such as the list of foreign countries or the education levels.
+
+    This API helps:
+
+      * to uniform syntax and semantic of data used to create public services;
+      * both public and private service providers in improving the interoperability of their services.
+
+    Every API references the source of its data.
+
+    #### Notes
+
+    This API do not requires authentication or authorization,
+    but must be used according the referenced terms of services, including
+    the throttling and caching information.
+
+    #### Examples
+
+    Retrieve the list of exposed vocabularies via
+
+    ```
+    http https://localhost:8443/vocabularies/v1/vocabularies
+    {
+      'entries': [
+        {"href": "https://"}
+      ]
+    }
+    ```
+
+  termsOfService: 'http://swagger.io/terms/'
+  contact:
+    email: robipolli@gmail.com
+    name: Roberto Polli
+    url: https://twitter.com/ioggstream
+  x-audience:
+    - public
+  # Ogni API deve avere un UUID, invariante nel tempo e
+  #   rispetto al `title`.
+  x-api-id: 00000000-0000-0000-0000-000000000000
+  license:
+    name: Apache 2.0
+    url: 'http://www.apache.org/licenses/LICENSE-2.0.html'
+
+  # Per dare indicazioni sul ciclo di vita dell'API
+  # si puo' usare un parametro come:
+  x-lifecycle:
+    published: 1970-01-01
+    deprecated: 2050-01-01
+    retired: 2050-06-01
+    maturity: published
+
+tags:
+  - name: public
+    description: Retrieve informations
+    externalDocs:
+      url: http://docs.my-api.com/pet-operations.htm
+servers:
+  - description: Development server
+    url: /vocabularies/v1
+    x-sandbox: true
+  - description: Test server
+    url: https://api.example.com/vocabularies/v1
+    x-sandbox: true
+    # Questo parametro indica come testare il servizio.
+    x-healthCheck:
+      url: https://ndc.gov.it/ade/vocabularies/v1/status
+      interval: 300
+      timeout: 15
+paths:
+  /vocabularies:
+    get:
+      security: []
+      summary: List vocabularies
+      description: List vocabularies and their metadata.
+      operationId: api.list_vocabularies
+      tags:
+      - public
+      responses:
+        <<: *common-responses
+        '200':
+          description: |
+            Returned a list of vocabularies with their Metadata
+            and the URL.
+
+            TODO: A way of returing versioned resources must be identified.
+          headers:
+            <<: [*ratelimit-headers, *caching-fields]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entries'
+
+  /vocabularies/{vocabulary_id}/{entry_id}:
+    get:
+      security: []
+      summary: Return a given entry from a vocabulary
+      description: |-
+        A single entry from the selected vocabulary.
+      operationId: api.get_entry
+      tags:
+      - public
+      parameters:
+        - $ref: "#/components/parameters/vocabulary_id"
+        - name: entry_id
+          schema:
+            type: string
+            maxLength: 64
+          in: path
+          required: true
+        - name: format
+          schema:
+            type: string
+            enum:
+            - 'jsonld'
+            - 'json'
+          in: query
+      responses:
+        <<: *common-responses
+        '200':
+          description: |
+            Il server ha ritornato il codepoint del vocabolario.
+          headers:
+            <<: [*ratelimit-headers, *caching-fields]
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Entry'
+                - type: object
+                  properties:
+                    "@context":
+                      type: object
+                      maxProperties: 50
+  /vocabularies/{vocabulary_id}:
+    get: &list_vocabularies
+      security: []
+      summary: Return one or more entries from a vocabulary.
+      description: |
+        Query data from the dataset using available fields.
+
+        Invalid parameters result in a `400` response.
+      operationId: api.list_entries
+      tags:
+        - public
+      parameters:
+        - name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            format: int32
+          in: query
+          required: false
+        - name: cursor
+          schema:
+            type: string
+            maxLength: 64
+            minLength: 1
+            pattern: >-
+              [a-zA-Z0-9]{,64}
+          in: query
+          required: false
+        - $ref: "#/components/parameters/vocabulary_id"
+        - name: label_it
+          description: |-
+            A string to be matched in the label_it of the vocabulary.
+          allowReserved: false
+          schema:
+            type: string
+            maxLength: 64
+            pattern: >-
+              %?[a-zA-Z0-9]{,62}%?
+          in: query
+          required: false
+      responses:
+        <<: *common-responses
+        '200':
+          description: |
+            A list of the matching entries.
+          headers:
+            <<: [*ratelimit-headers, *caching-fields]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entries'
+  /vocabularies-schema/{vocabulary_id}:
+    get:
+      security: []
+      summary: Return a vocabulary in the format of a schema.
+      tags:
+        - public
+      parameters:
+        - $ref: "#/components/parameters/vocabulary_id"
+        - $ref: "#/components/parameters/label_it"
+        - name: lang
+          required: false
+          in: query
+          schema:
+            type: string
+            enum: [en, it]
+            example: en
+        - name: schema_type
+          in: query
+          required: false
+          schema:
+            description: |-
+              See https://github.com/zalando/connexion/issues/691#issuecomment-455774634
+            type: string
+            maxLength: 10
+            oneOf:
+            - type: string
+              title: Return an oneOf jsonschema
+              enum:
+                - "oneOf"
+            - type: string
+              title: Return an oneOf OAS3 schema object
+              enum:
+                - "oneOfenum"
+            - type: string
+              title: Return an allOf jsonschema
+              enum:
+                - "anyOf"
+            - type: string
+              title: Return an oneOf OAS3 schema object
+              enum:
+              - "anyOfenum"
+            - type: string
+              title: Return a string+enum OAS3 schema object
+              enum:
+              - enum
+            - type: string
+              title: Return a string+enum OAS3 schema object
+              enum:
+              - enumUrl
+
+      operationId: api.schema_list_entries_oneof
+      description: |-
+        The content of a vocabulary as a json-schema entry,
+        so that it can be embeddable in a schema declaration.
+
+        The format is the following
+      responses:
+        <<: *common-responses
+        '200':
+          description: |
+            A list of the matching entries.
+          headers:
+            <<: [*ratelimit-headers, *caching-fields]
+          content:
+            application/json:
+              schema:
+                type: object
+                oneOf:
+                - type: object
+                  additionalProperties: false
+                  required:
+                    - oneOf
+                  properties:
+                    oneOf:
+                      $ref: "#/components/schemas/ConstList"
+                - type: object
+                  additionalProperties: false
+                  required:
+                    - allOf
+                  properties:
+                    allOf:
+                      $ref: "#/components/schemas/ConstList"
+                - type: object
+                  additionalProperties: false
+                  required:
+                    - enum
+                  properties:
+                    enum:
+                      type: array
+                      maxItems: 1000
+                      minItems: 0
+                      items:
+                        type: string
+                        maxLength: 64
+
+  /status:
+    get:
+      security: []
+      summary: Ritorna lo stato dell'applicazione.
+      description: |
+        Ritorna lo stato dell'applicazione. A scopo
+        di test, su base randomica puo' ritornare
+        un errore.
+      operationId: api.get_status
+      tags:
+        - public
+      responses:
+        <<: *common-responses
+        '200':
+          description: |
+            Server returned correctly its status.
+          headers:
+            <<: *ratelimit-headers
+            Cache-Control:
+              description: |-
+                Application status should not be cached,
+                so no-store.
+              schema:
+                type: string
+                enum:
+                - max-age=0, no-cache, no-store
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+components:
+  parameters:
+    vocabulary_id:
+      in: path
+      required: true
+      name: vocabulary_id
+      schema:
+        type: string
+        maxLength: 64
+        pattern: >-
+          [a-zA-Z0-9-_]+
+    label_it:
+      name: label_it
+      description: |-
+        A string to be matched in the label_it of the vocabulary.
+      allowReserved: false
+      schema:
+        type: string
+        maxLength: 64
+        pattern: >-
+          %?[a-zA-Z0-9]{,62}%?
+      in: query
+      required: false
+
+  headers:
+    X-RateLimit-Limit:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/headers/X-RateLimit-Limit'
+    X-RateLimit-Remaining:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/headers/X-RateLimit-Remaining'
+    X-RateLimit-Reset:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/headers/X-RateLimit-Reset'
+    Retry-After:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/headers/Retry-After'
+
+  responses:
+    # Predefined error codes for this API
+    400BadRequest:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/responses/400BadRequest'
+    404NotFound:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/responses/404NotFound'
+    429TooManyRequests:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/responses/429TooManyRequests'
+    503ServiceUnavailable:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/responses/503ServiceUnavailable'
+    default:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/responses/default'
+
+  schemas:
+    ConstList:
+      type: array
+      maxItems: 1000
+      minItems: 0
+      items:
+        $ref: "#/components/schemas/Const"
+
+    Const:
+      type: object
+      additionalProperties: false
+      properties:
+        const:
+          type: string
+          maxLength: 64
+        title:
+          type: string
+          maxLength: 64
+
+    Problem:
+      $ref: 'https://teamdigitale.github.io/openapi/0.0.7/definitions.yaml#/schemas/Problem'
+    EntryId:
+      type: string
+      example: '42134fa'
+      pattern: >-
+        [a-zA-Z0-9]+
+      maxLength: 255
+      minLength: 2
+    Entry:
+      type: object
+      description: An entry from a vocabulary.
+      additionalProperties: false
+      properties:
+        entry_id:
+          $ref: '#/components/schemas/EntryId'
+    Entries:
+      type: object
+      description: A list of entries
+      additionalProperties: false
+      properties:
+        count:
+          type: integer
+          example: 42
+          minimum: 1
+          maximum: 100
+          format: int32
+        url:
+          type: string
+          example: 'https://example.com/api/vocabularies/42134fa'
+          maxLength: 255
+          minLength: 16
+          pattern: >-
+            ^https://[a-zA-Z0-9-_.]+/api/vocabularies/[a-zA-Z0-9-_]+$
+        last:
+          $ref: '#/components/schemas/EntryId'
+        version:
+          type: string
+          example: '1.0.0'
+          maxLength: 255
+          minLength: 1
+          pattern: >-
+            [a-zA-Z0-9-_.]+
+        entries:
+          type: array
+          items:
+            $ref:  "#/components/schemas/Entry"
+          maxItems: 100
+          minItems: 0
